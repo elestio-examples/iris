@@ -5,7 +5,7 @@ IRIS_SECRET_KEY=$(openssl rand -hex 64)
 IRIS_SECURITY_PASSWORD_SALT=$(openssl rand -hex 64)
 IRIS_ADM_API_KEY=$(openssl rand -hex 64)
 
-cat << EOT >> ./.mautic_env
+cat << EOT >> ./.env
 
 IRIS_SECRET_KEY="${IRIS_SECRET_KEY}"
 IRIS_SECURITY_PASSWORD_SALT="${IRIS_SECURITY_PASSWORD_SALT}"
