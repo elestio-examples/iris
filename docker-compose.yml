@@ -1,0 +1,131 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: always
+    networks:
+      - iris_backend
+
+  db:
+    image: ghcr.io/dfir-iris/iriswebapp_db:${SOFTWARE_VERSION_TAG}
+    restart: always
+    environment:
+      - POSTGRES_USER: ${POSTGRES_USER}
+      - POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      - POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER}
+      - POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      - POSTGRES_DB: ${POSTGRES_DB}
+    networks:
+      - iris_backend
+    volumes:
+      - ./db_data:/var/lib/postgresql/data
+    ports:
+      - 172.17.0.1:29094:5432
+
+  app:
+    image: ghcr.io/dfir-iris/iriswebapp_app:${SOFTWARE_VERSION_TAG}
+    container_name: iriswebapp_app
+    command: ["nohup", "./iris-entrypoint.sh", "iriswebapp"]
+    volumes:
+      - ./certificates/rootCA/irisRootCACert.pem:/etc/irisRootCACert.pem:ro
+      - ./certificates/:/home/iris/certificates/:ro
+      - ./certificates/ldap/:/iriswebapp/certificates/ldap/:ro
+      - ./iris-downloads:/home/iris/downloads
+      - ./user_templates:/home/iris/user_templates
+      - ./server_data:/home/iris/server_data
+    restart: always
+    depends_on:
+      - "rabbitmq"
+      - "db"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER: ${POSTGRES_USER}
+      - POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      - POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER}
+      - POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      - POSTGRES_SERVER: ${POSTGRES_SERVER}
+      - POSTGRES_PORT: ${POSTGRES_PORT}
+      - IRIS_SECRET_KEY: ${IRIS_SECRET_KEY}
+      - IRIS_SECURITY_PASSWORD_SALT: ${IRIS_SECURITY_PASSWORD_SALT}
+    networks:
+      - iris_backend
+      - iris_frontend
+
+  worker:
+    image: ghcr.io/dfir-iris/iriswebapp_app:${SOFTWARE_VERSION_TAG}
+    container_name: iriswebapp_worker
+    restart: always
+    command:
+      [
+        "./wait-for-iriswebapp.sh",
+        "app:8000",
+        "./iris-entrypoint.sh",
+        "iris-worker",
+      ]
+    volumes:
+      - ./certificates/rootCA/irisRootCACert.pem:/etc/irisRootCACert.pem:ro
+      - ./certificates/:/home/iris/certificates/:ro
+      - ./certificates/ldap/:/iriswebapp/certificates/ldap/:ro
+      - ./iris-downloads:/home/iris/downloads
+      - ./user_templates:/home/iris/user_templates
+      - ./server_data:/home/iris/server_data
+    depends_on:
+      - "rabbitmq"
+      - "db"
+      - "app"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER: ${POSTGRES_USER}
+      - POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      - POSTGRES_ADMIN_USER: ${POSTGRES_ADMIN_USER}
+      - POSTGRES_ADMIN_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      - POSTGRES_SERVER: ${POSTGRES_SERVER}
+      - POSTGRES_PORT: ${POSTGRES_PORT}
+      - IRIS_SECRET_KEY: ${IRIS_SECRET_KEY}
+      - IRIS_SECURITY_PASSWORD_SALT: ${IRIS_SECURITY_PASSWORD_SALT}
+      - IRIS_WORKER
+    networks:
+      - iris_backend
+
+  nginx:
+    image: ghcr.io/dfir-iris/iriswebapp_nginx:${SOFTWARE_VERSION_TAG}
+    container_name: iriswebapp_nginx
+    environment:
+      - IRIS_UPSTREAM_SERVER: ${IRIS_UPSTREAM_SERVER}
+      - IRIS_UPSTREAM_PORT: ${IRIS_UPSTREAM_PORT}
+      - INTERFACE_HTTPS_PORT: ${INTERFACE_HTTPS_PORT}
+      - SERVER_NAME: ${SERVER_NAME}
+      - CERT_FILENAME: ${CERT_FILENAME}
+      - KEY_FILENAME: ${KEY_FILENAME}
+      - IRIS_AUTHENTICATION_TYPE: ${IRIS_AUTHENTICATION_TYPE}
+    networks:
+      - iris_frontend
+    ports:
+      - "172.17.0.1:64907:443"
+    volumes:
+      - "./certificates/web_certificates/:/www/certs/:ro"
+    restart: always
+    depends_on:
+      - "app"
+
+  pgadmin4:
+    image: elestio/pgadmin:latest
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
+      PGADMIN_LISTEN_PORT: 8080
+    ports:
+      - "172.17.0.1:58534:8080"
+    volumes:
+      - ./servers.json:/pgadmin4/servers.json
+    networks:
+      - iris_backend
+      - iris_frontend
+
+networks:
+  iris_backend:
+    name: iris_backend
+  iris_frontend:
+    name: iris_frontend
